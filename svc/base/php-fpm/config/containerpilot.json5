@@ -5,7 +5,19 @@
         format: "default",
         output: "stdout"
     },
-    jobs: [{{ if .CONSUL_AGENT }}
+    jobs: [
+        {
+            // this job is not advertised and has no health check. we'll never
+            // see a 'preStart healthy' event, just 'preStart exitSuccess'
+            name: "preStart",
+            exec: [
+                "/usr/local/bin/reload.sh", "preStart"
+            ],{{ if .CONSUL_AGENT }}
+            when: {
+                source: "consul-agent",
+                once: "healthy"
+            }
+        },
         {
             // this job has no 'port' configuration so it will not be
             // advertised to the Consul server. note there's no 'when' field
@@ -23,18 +35,6 @@
             restarts: "unlimited",
             health: {
                 exec: "consul info | grep leader"
-            }
-        },{{ end }}
-        {
-            // this job is not advertised and has no health check. we'll never
-            // see a 'preStart healthy' event, just 'preStart exitSuccess'
-            name: "preStart",
-            exec: [
-                "/usr/local/bin/reload.sh", "preStart"
-            ],{{ if .CONSUL_AGENT }}
-            when: {
-                source: "consul-agent",
-                once: "healthy"
             }{{ end }}
         },
         {

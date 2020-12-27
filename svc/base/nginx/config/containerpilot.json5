@@ -13,10 +13,10 @@
             exec: [
                 "/usr/local/bin/reload.sh", "preStart"
             ],{{ if .CONSUL_AGENT }}
-        when: {
-            source: "consul-agent",
-            once: "healthy"
-        }
+            when: {
+                source: "consul-agent",
+                once: "healthy"
+            }
         },
         {
             name: "consul-agent",
@@ -35,29 +35,13 @@
         {
             "name": "battle-nginx",
             "port": 80,
+            exec: "nginx",
             "health": {
                 "ttl": 25,
                 interval: 10,
                 exec: "/usr/bin/curl --fail --silent --show-error --output /dev/null http://localhost/nginx-health",
             },
             "interfaces": ["eth0"],
-            when: {
-                // 'app' won't start until the 'preStart' has succeeeded, but we
-                // give up after 120 seconds
-                source: "preStart",
-                once: "exitSuccess",
-                timeout: "120s"
-            }
-        },
-        {
-            "name": "battle-nginx-public",
-            "port": 80,
-            "health": {
-                "ttl": 25,
-                interval: 10,
-                exec: "/usr/bin/curl --fail --silent --show-error --output /dev/null http://localhost/nginx-health"
-            },
-            "interfaces": ["eth1", "eth0"],
             when: {
                 // 'app' won't start until the 'preStart' has succeeeded, but we
                 // give up after 120 seconds

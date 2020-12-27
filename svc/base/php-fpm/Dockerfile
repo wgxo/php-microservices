@@ -35,6 +35,4 @@ COPY scripts/ /usr/local/bin/
 
 RUN chmod +x /usr/local/bin/reload.sh
 
-CMD [ "/usr/local/bin/containerpilot", \
-    "php-fpm", \
-        "--nodaemonize"]
+CMD [ "/usr/local/bin/containerpilot"]
