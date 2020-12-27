@@ -1,0 +1,36 @@
+version: '2'
+services:
+    consul:
+        image: consul:1.9.1
+        mem_limit: 128m
+        expose:
+            - 53
+            - 8300
+            - 8301
+            - 8302
+            - 8400
+            - 8500
+        ports:
+            - 8500:8500
+        dns:
+            - 127.0.0.1
+    fpm:
+        build: ./svc/base/php-fpm/
+        links:
+            - consul
+        expose:
+            - 9000
+        environment:
+            - BACKEND=nginx
+            - CONSUL=consul
+    nginx:
+        build: ./svc/base/nginx/
+        links:
+            - consul
+            - fpm
+        environment:
+            - BACKEND=fpm
+            - CONSUL=consul
+        ports:
+            - 8080:80
+            - 9090:9090

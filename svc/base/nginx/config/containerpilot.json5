@@ -1,0 +1,124 @@
+{
+    consul: "{{ if .CONSUL_AGENT }}localhost{{ else }}{{ .CONSUL }}{{ end }}:8500",
+    logging: {
+        level: "DEBUG",
+        format: "default",
+        output: "stdout"
+    },
+    jobs: [
+        {
+            // this job is not advertised and has no health check. we'll never
+            // see a 'preStart healthy' event, just 'preStart exitSuccess'
+            name: "preStart",
+            exec: [
+                "/usr/local/bin/reload.sh", "preStart"
+            ],{{ if .CONSUL_AGENT }}
+        when: {
+            source: "consul-agent",
+            once: "healthy"
+        }
+        },
+        {
+            name: "consul-agent",
+            exec: ["/usr/local/bin/consul", "agent",
+                "-data-dir=/var/lib/consul",
+                "-config-dir=/etc/consul",
+                "-rejoin",
+                "-retry-join", "{{ .CONSUL }}",
+                "-retry-max", "10",
+                "-retry-interval", "10s"],
+            restarts: "unlimited",
+            health: {
+                exec: "consul info | grep leader"
+            }{{ end }}
+        },
+        {
+            "name": "battle-nginx",
+            "port": 80,
+            "health": {
+                "ttl": 25,
+                interval: 10,
+                exec: "/usr/bin/curl --fail --silent --show-error --output /dev/null http://localhost/nginx-health",
+            },
+            "interfaces": ["eth0"],
+            when: {
+                // 'app' won't start until the 'preStart' has succeeeded, but we
+                // give up after 120 seconds
+                source: "preStart",
+                once: "exitSuccess",
+                timeout: "120s"
+            }
+        },
+        {
+            "name": "battle-nginx-public",
+            "port": 80,
+            "health": {
+                "ttl": 25,
+                interval: 10,
+                exec: "/usr/bin/curl --fail --silent --show-error --output /dev/null http://localhost/nginx-health"
+            },
+            "interfaces": ["eth1", "eth0"],
+            when: {
+                // 'app' won't start until the 'preStart' has succeeeded, but we
+                // give up after 120 seconds
+                source: "preStart",
+                once: "exitSuccess",
+                timeout: "120s"
+            }
+        },
+        {
+            name: "{{ .BACKEND }}",
+            exec: [
+                "/usr/local/bin/reload.sh"
+            ],
+            when: {
+                // this event will be received whenever the watch for 'app'
+                // sees a change in Consul.
+                source: "watch.app",
+                each: "changed"
+            }
+        },
+        {
+            name: "sensor1",
+            exec: ["/usr/local/bin/sensor.sh", "unhandled"],
+            timeout: "5s",
+            when: {
+                interval: "10s"
+            }
+        },
+        {
+            name: "sensor2",
+            exec: ["/usr/local/bin/sensor.sh", "connections_load"],
+            timeout: "5s",
+            when: {
+                interval: "10s"
+            }
+        }
+    ],
+    watches: [
+        {
+            // this watch will fire the following events:
+            // - 'watch.app changed' when there's a change in Consul
+            // - 'watch.app healthy' when app changes to being healthy
+            // - 'watch.app unhealthy' when app changes to being unhealthy
+            name: "app",
+            interval: 7
+        }
+    ],
+    telemetry: {
+        port: 9090,
+        interfaces: ["eth0"],
+        metrics: [
+            {
+                "name": "nginx_connections_unhandled_total",
+                "help": "Number of accepted connections that were not handled",
+                "type": "gauge",
+            },
+            {
+                "name": "nginx_connections_load",
+                "help": "Ratio of active connections (less waiting) to the maximum worker connections",
+                "type": "gauge",
+            }
+        ]
+    }
+}

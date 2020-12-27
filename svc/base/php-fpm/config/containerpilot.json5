@@ -1,0 +1,82 @@
+{
+    consul: "{{ if .CONSUL_AGENT }}localhost{{ else }}{{ .CONSUL }}{{ end }}:8500",
+    logging: {
+        level: "DEBUG",
+        format: "default",
+        output: "stdout"
+    },
+    jobs: [{{ if .CONSUL_AGENT }}
+        {
+            // this job has no 'port' configuration so it will not be
+            // advertised to the Consul server. note there's no 'when' field
+            // so this will start on the 'global startup' event by default.
+            name: "consul-agent",
+            exec: [
+                "/usr/local/bin/consul", "agent",
+                "-data-dir=/var/lib/consul",
+                "-config-dir=/etc/consul",
+                "-rejoin",
+                "-retry-join", "{{ .CONSUL }}",
+                "-retry-max", "10",
+                "-retry-interval", "10s"
+            ],
+            restarts: "unlimited",
+            health: {
+                exec: "consul info | grep leader"
+            }
+        },{{ end }}
+        {
+            // this job is not advertised and has no health check. we'll never
+            // see a 'preStart healthy' event, just 'preStart exitSuccess'
+            name: "preStart",
+            exec: [
+                "/usr/local/bin/reload.sh", "preStart"
+            ],{{ if .CONSUL_AGENT }}
+            when: {
+                source: "consul-agent",
+                once: "healthy"
+            }{{ end }}
+        },
+        {
+            name: "{{ .BACKEND }}",
+            exec: [
+                "/usr/local/bin/reload.sh"
+            ],
+            when: {
+                // this event will be received whenever the watch for 'app'
+                // sees a change in Consul.
+                source: "watch.app",
+                each: "changed"
+            }
+        },
+        {
+            name: "base-fpm",
+            exec: "php-fpm --nodaemonize",
+            port: 80,
+            restarts: "unlimited",
+            when: {
+                // 'app' won't start until the 'preStart' has succeeeded, but we
+                // give up after 120 seconds
+                source: "preStart",
+                once: "exitSuccess",
+                timeout: "120s"
+            },
+            health: {
+                exec: "/usr/local/sbin/php-fpm -t",
+                interval: 10,
+                ttl: 25,
+                timeout: "10s" // the health check can have its own timeout
+            }
+        }
+    ],
+    watches: [
+        {
+            // this watch will fire the following events:
+            // - 'watch.app changed' when there's a change in Consul
+            // - 'watch.app healthy' when app changes to being healthy
+            // - 'watch.app unhealthy' when app changes to being unhealthy
+            name: "app",
+            interval: 7
+        }
+    ],
+}
